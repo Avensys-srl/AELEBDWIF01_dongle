@@ -35,6 +35,58 @@ ble_packet_t password_packet = {0};
 
 static prepare_type_env_t prepare_write_env;
 
+static bool ble_packet_append(ble_packet_t *packet, const uint8_t *data, size_t len, size_t max_len, const char *label) {
+    if (packet->data == NULL) {
+        packet->data = malloc(len);
+        if (packet->data == NULL) {
+            ESP_LOGE(GATTS_TABLE_TAG, "Failed to allocate memory for %s packet", label);
+            return false;
+        }
+        memcpy(packet->data, data, len);
+        packet->len = len;
+        return true;
+    }
+
+    size_t new_len = packet->len + len;
+    if (new_len > max_len) {
+        ESP_LOGE(GATTS_TABLE_TAG, "%s packet length exceeds maximum length", label);
+        free(packet->data);
+        packet->data = NULL;
+        packet->len = 0;
+        return false;
+    }
+
+    uint8_t *new_data = realloc(packet->data, new_len);
+    if (new_data == NULL) {
+        ESP_LOGE(GATTS_TABLE_TAG, "Failed to reallocate memory for %s packet", label);
+        free(packet->data);
+        packet->data = NULL;
+        packet->len = 0;
+        return false;
+    }
+
+    memcpy(new_data + packet->len, data, len);
+    packet->data = new_data;
+    packet->len = new_len;
+    return true;
+}
+
+static void ble_packet_copy_to_string(const ble_packet_t *packet, char *out, size_t out_size) {
+    size_t copy_len = packet->len;
+    if (out_size == 0) {
+        return;
+    }
+    if (packet->data == NULL) {
+        out[0] = '\0';
+        return;
+    }
+    if (copy_len >= out_size) {
+        copy_len = out_size - 1;
+    }
+    memcpy(out, packet->data, copy_len);
+    out[copy_len] = '\0';
+}
+
 static uint8_t service_uuid[16] = {
     /* LSB <--------------------------------------------------------------------------------> MSB */
     // first uuid, 16bit, [12],[13] is the value
@@ -306,6 +358,47 @@ static esp_err_t nvs_write_string(const char* key, const char* value) {
     return err;
 }
 
+static void handle_write_event(esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param) {
+    if (param->write.handle == ble_handle_table[IDX_CHAR_VAL_WIFI_SSID]) {
+        ESP_LOGI(GATTS_TABLE_TAG, "WIFI SSID");
+
+        if (!ble_packet_append(&ssid_packet, param->write.value, param->write.len, MAX_SSID_LENGTH, "SSID")) {
+            return;
+        }
+
+        wifi_is_ssid_send = true;
+        ble_packet_copy_to_string(&ssid_packet, WIFI_SSID, sizeof(WIFI_SSID));
+
+        esp_err_t err = nvs_write_string("wifi_ssid", WIFI_SSID);
+        if (err != ESP_OK) {
+            ESP_LOGE(GATTS_TABLE_TAG, "Error (%s) writing SSID to NVS!", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(GATTS_TABLE_TAG, "SSID written to NVS successfully");
+        }
+    } else if (param->write.handle == ble_handle_table[IDX_CHAR_VAL_WIFI_PASSWORD]) {
+        ESP_LOGI(GATTS_TABLE_TAG, "WIFI Password");
+
+        if (!ble_packet_append(&password_packet, param->write.value, param->write.len, MAX_PASSWORD_LENGTH, "password")) {
+            return;
+        }
+
+        wifi_is_pass_send = true;
+        connect_to_wifi   = true;
+        ble_packet_copy_to_string(&password_packet, WIFI_PASSWORD, sizeof(WIFI_PASSWORD));
+
+        esp_err_t err = nvs_write_string("wifi_pass", WIFI_PASSWORD);
+        if (err != ESP_OK) {
+            ESP_LOGE(GATTS_TABLE_TAG, "Error (%s) writing password to NVS!", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(GATTS_TABLE_TAG, "Password written to NVS successfully");
+        }
+    }
+
+    if (param->write.need_rsp) {
+        esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL);
+    }
+}
+
 
 void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
     switch (event) {
@@ -454,105 +547,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
             if (!param->write.is_prep) {
                 ESP_LOGI(GATTS_TABLE_TAG, "GATT_WRITE_EVT, handle = %d, value len = %d", param->write.handle, param->write.len);
                 esp_log_buffer_hex(GATTS_TABLE_TAG, param->write.value, param->write.len);
-
-                    if (param->write.handle == ble_handle_table[IDX_CHAR_VAL_WIFI_SSID]) {
-                        ESP_LOGI(GATTS_TABLE_TAG, "WIFI SSID");
-
-                    if (ssid_packet.data == NULL) {
-                    ssid_packet.data = malloc(param->write.len);
-                    if (ssid_packet.data == NULL) {
-                        ESP_LOGE(GATTS_TABLE_TAG, "Failed to allocate memory for password packet");
-                        break;
-                    }
-                    memcpy(ssid_packet.data, param->write.value, param->write.len);
-                    ssid_packet.len = param->write.len;
-                    } else {
-                        size_t new_len = ssid_packet.len + param->write.len;
-                        if (new_len <= MAX_SSID_LENGTH) {
-                            uint8_t *new_data = realloc(ssid_packet.data, new_len);
-                            if (new_data == NULL) {
-                                ESP_LOGE(GATTS_TABLE_TAG, "Failed to reallocate memory for password packet");
-                                free(ssid_packet.data);
-                                ssid_packet.data = NULL;
-                                ssid_packet.len = 0;
-                                break;
-                            }
-                            memcpy(new_data + ssid_packet.len, param->write.value, param->write.len);
-                            ssid_packet.data = new_data;
-                            ssid_packet.len = new_len;
-                        } else {
-                            ESP_LOGE(GATTS_TABLE_TAG, "Password packet length exceeds maximum length");
-                            free(ssid_packet.data);
-                            ssid_packet.data = NULL;
-                            ssid_packet.len = 0;
-                        }
-                    }
-
-                    
-                    wifi_is_ssid_send = true;
-
-                    memcpy(WIFI_SSID, ssid_packet.data, ssid_packet.len);
-                    WIFI_SSID[ssid_packet.len] = '\0';
-
-                    // Scrivi SSID nella NVS
-                    esp_err_t err = nvs_write_string("wifi_ssid", WIFI_SSID);
-                    if (err != ESP_OK) {
-                        ESP_LOGE(GATTS_TABLE_TAG, "Error (%s) writing SSID to NVS!", esp_err_to_name(err));
-                    } else {
-                        ESP_LOGI(GATTS_TABLE_TAG, "SSID written to NVS successfully");
-                    }
-
-
-                } else if (param->write.handle == ble_handle_table[IDX_CHAR_VAL_WIFI_PASSWORD]) {
-                    ESP_LOGI(GATTS_TABLE_TAG, "WIFI Password");
-                    
-                if (password_packet.data == NULL) {
-                    password_packet.data = malloc(param->write.len);
-                    if (password_packet.data == NULL) {
-                        ESP_LOGE(GATTS_TABLE_TAG, "Failed to allocate memory for SSID packet");
-                        break;
-                    }
-                    memcpy(password_packet.data, param->write.value, param->write.len);
-                    password_packet.len = param->write.len;
-                    } else {
-                        size_t new_len = password_packet.len + param->write.len;
-                        if (new_len <= MAX_PASSWORD_LENGTH) {
-                            uint8_t *new_data = realloc(password_packet.data, new_len);
-                            if (new_data == NULL) {
-                                ESP_LOGE(GATTS_TABLE_TAG, "Failed to reallocate memory for SSID packet");
-                                free(password_packet.data);
-                                password_packet.data = NULL;
-                                password_packet.len = 0;
-                                break;
-                            }
-                            memcpy(new_data + password_packet.len, param->write.value, param->write.len);
-                            password_packet.data = new_data;
-                            password_packet.len = new_len;
-                        } else {
-                            ESP_LOGE(GATTS_TABLE_TAG, "SSID packet length exceeds maximum length");
-                            free(password_packet.data);
-                            password_packet.data = NULL;
-                            password_packet.len = 0;
-                        }
-                    }
-
-
-                    wifi_is_pass_send = true;
-                    connect_to_wifi   = true;
-                    memcpy(WIFI_PASSWORD, password_packet.data, password_packet.len);
-                    WIFI_PASSWORD[password_packet.len] = '\0';
-
-                    // Scrivi Password nella NVS
-                    esp_err_t err = nvs_write_string("wifi_pass", WIFI_PASSWORD);
-                    if (err != ESP_OK) {
-                        ESP_LOGE(GATTS_TABLE_TAG, "Error (%s) writing password to NVS!", esp_err_to_name(err));
-                    } else {
-                        ESP_LOGI(GATTS_TABLE_TAG, "Password written to NVS successfully");
-                    }
-                } 
-                if (param->write.need_rsp) {
-                    esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL);
-                }
+                handle_write_event(gatts_if, param);
             } else {
                 prepare_write_event_env(gatts_if, &prepare_write_env, param);
             }

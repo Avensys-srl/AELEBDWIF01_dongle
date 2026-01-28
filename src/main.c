@@ -1,4 +1,5 @@
 #include "main.h"
+#include "ble_app.h"
 #include "mqtt_app.h"
 #include "CL_WBM.h"
 #include "protocol_Serial.h"
@@ -123,7 +124,6 @@ void WBM_Write_Eeprom_Data_Parse ( byte* rxBuffer );
 void Quarke_Update_task (void *pvParameters);
 
 // MQTT address
-char topic_buffer[64];
 /**
  * @brief The MQTT address of the device.
  *
@@ -689,8 +689,7 @@ static void Quarke_event_task(void *pvParameters)
 
 							if (is_mqtt_ready) {
 								// Publish Polling Data to the App via MQTT
-								snprintf(topic_buffer, sizeof(topic_buffer), "/%s/esp/polling", address);
-								publish_debug_message(polling_data, polling_data_len, topic_buffer, address);
+                                mqtt_publish_polling(address, polling_data, polling_data_len);
 							}
 							
 							esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_POLLIING], polling_data_len, polling_data);
@@ -710,8 +709,7 @@ static void Quarke_event_task(void *pvParameters)
 
 									if (is_mqtt_ready) {
 										// Publish Debug Data to the App via MQTT
-										snprintf(topic_buffer, sizeof(topic_buffer), "/%s/esp/debug", address);
-										publish_debug_message(debug_data, debug_data_len, topic_buffer, address);
+                                        mqtt_publish_debug(address, debug_data, debug_data_len);
 									}
 
 									esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_DEBUG_DATA], debug_data_len, debug_data);
@@ -727,8 +725,7 @@ static void Quarke_event_task(void *pvParameters)
 
 									if (is_mqtt_ready) {
 									// Publish EEPROM Data to the App via MQTT
-									snprintf(topic_buffer, sizeof(topic_buffer), "/%s/esp/eeprom", address);
-									publish_debug_message((u_int8_t *)&gRDEeprom, sizeof(gRDEeprom), topic_buffer, address);
+                                    mqtt_publish_eeprom(address, (u_int8_t *)&gRDEeprom, sizeof(gRDEeprom));
 									}	
 
 									esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_EEPROM_DATA], sizeof(gRDEeprom), (u_int8_t *)&gRDEeprom);
@@ -980,54 +977,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
-
-    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    ret                               = esp_bt_controller_init(&bt_cfg);
-    if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed: %s", __func__, esp_err_to_name(ret));
+    ret = ble_app_init();
+    if (ret != ESP_OK) {
         return;
-    }
-
-    ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
-    if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed: %s", __func__, esp_err_to_name(ret));
-        return;
-    }
-
-    ret = esp_bluedroid_init();
-    if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s init bluetooth failed: %s", __func__, esp_err_to_name(ret));
-        return;
-    }
-
-    ret = esp_bluedroid_enable();
-    if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable bluetooth failed: %s", __func__, esp_err_to_name(ret));
-        return;
-    }
-
-    ret = esp_ble_gatts_register_callback(gatts_event_handler);
-    if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "gatts register error, error code = %x", ret);
-        return;
-    }
-
-    ret = esp_ble_gap_register_callback(gap_event_handler);
-    if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "gap register error, error code = %x", ret);
-        return;
-    }
-
-    ret = esp_ble_gatts_app_register(ESP_APP_ID);
-    if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "gatts app register error, error code = %x", ret);
-        return;
-    }
-
-    esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
-    if (local_mtu_ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
     }
 
 	ret = esp_efuse_mac_get_default(base_mac_addr);
@@ -1297,8 +1249,7 @@ void Connect_To_QRK ( void )
 
 			if (is_mqtt_ready) {
 			// Publish EEPROM Data to the App via MQTT
-			snprintf(topic_buffer, sizeof(topic_buffer), "/%s/esp/eeprom", address);
-			publish_debug_message((u_int8_t *)&gRDEeprom, sizeof(gRDEeprom), topic_buffer, address);
+            mqtt_publish_eeprom(address, (u_int8_t *)&gRDEeprom, sizeof(gRDEeprom));
 			ESP_LOGI(TAG1, "gRDEeprom size : %d", sizeof (S_EEPROM));
 			}	
 			break;

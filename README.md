@@ -27,6 +27,18 @@ This project implements an ESP32 device that:
   - Serial data exchange and polling
   - Firmware update downloaded by ESP32
 
+## BLE/MQTT Flow (mini diagram)
+```
+Phone/App
+  |  (BLE GATT: SSID/PASS)
+  v
+ESP32 (BLE + Wi-Fi) --> AWS IoT Core (MQTT topics)
+        |                       ^
+        | (UART1)               |
+        v                       |
+     WBM/Quarke  <--------------
+```
+
 ## Requirements
 - **Hardware**: ESP32 DevKit v1 (board: `esp32doit-devkit-v1`)
 - **Toolchain**: PlatformIO with ESP-IDF framework
@@ -77,7 +89,9 @@ Useful parameters (already set in `platformio.ini`):
 - `src/main.c` - entrypoint, core tasks, OTA/Quarke
 - `src/mqtt_app.c` - MQTT client, subscriptions, publish helpers
 - `include/mqtt_app.h` - MQTT public API
-- `src/ble.c` - BLE provisioning
+- `src/ble.c` - BLE provisioning and GATT handlers
+- `src/ble_app.c` - BLE stack init
+- `include/ble_app.h` - BLE init API
 - `src/wifi_connect.c` - Wi-Fi management
 - `src/Uart1.c` - UART1 driver
 - `src/WBM_Serial.c` - WBM/Quarke serial protocol

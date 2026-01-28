@@ -30,6 +30,16 @@ static void log_error_if_nonzero(const char *message, int error_code) {
     }
 }
 
+static void mqtt_build_topic(char *buffer, size_t buffer_size, const char *address, const char *suffix) {
+    if (address == NULL || suffix == NULL) {
+        if (buffer_size > 0) {
+            buffer[0] = '\0';
+        }
+        return;
+    }
+    snprintf(buffer, buffer_size, "/%s/%s", address, suffix);
+}
+
 void mqtt_subscribe_app_topics(const char *address) {
     char topic_buffer[64];
     int msg_id;
@@ -38,11 +48,11 @@ void mqtt_subscribe_app_topics(const char *address) {
         return;
     }
 
-    snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/eeprom", address);
+    mqtt_build_topic(topic_buffer, sizeof(topic_buffer), address, "app/eeprom");
     msg_id = esp_mqtt_client_subscribe(client, topic_buffer, 0);
     ESP_LOGI(GATTS_TABLE_TAG, "sent subscribe successful, msg_id=%d", msg_id);
 
-    snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/request", address);
+    mqtt_build_topic(topic_buffer, sizeof(topic_buffer), address, "app/request");
     msg_id = esp_mqtt_client_subscribe(client, topic_buffer, 0);
     ESP_LOGI(GATTS_TABLE_TAG, "sent subscribe successful, msg_id=%d", msg_id);
 }
@@ -66,6 +76,24 @@ void publish_debug_message(const uint8_t *data, size_t data_len, const char *top
         int msg_id = esp_mqtt_client_publish(client, topic, json_buffer, json_len, 0, 0);
         ESP_LOGI(GATTS_TABLE_TAG, "%s publish successful, msg_id=%d", topic, msg_id);
     }
+}
+
+void mqtt_publish_with_suffix(const char *address, const char *suffix, const uint8_t *data, size_t data_len) {
+    char topic_buffer[64];
+    mqtt_build_topic(topic_buffer, sizeof(topic_buffer), address, suffix);
+    publish_debug_message(data, data_len, topic_buffer, address);
+}
+
+void mqtt_publish_eeprom(const char *address, const uint8_t *data, size_t data_len) {
+    mqtt_publish_with_suffix(address, "esp/eeprom", data, data_len);
+}
+
+void mqtt_publish_polling(const char *address, const uint8_t *data, size_t data_len) {
+    mqtt_publish_with_suffix(address, "esp/polling", data, data_len);
+}
+
+void mqtt_publish_debug(const char *address, const uint8_t *data, size_t data_len) {
+    mqtt_publish_with_suffix(address, "esp/debug", data, data_len);
 }
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
@@ -110,7 +138,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
             printf("DATA=%.*s\r\n", event->data_len, event->data);
 
-            snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/eeprom", address);
+            mqtt_build_topic(topic_buffer, sizeof(topic_buffer), address, "app/eeprom");
             printf("compare_eeprom=%d\r\n", strncmp(event->topic, topic_buffer, event->topic_len));
 
             if (strncmp(event->topic, topic_buffer, event->topic_len) == 0) {
@@ -124,13 +152,12 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                 ESP_LOGI(GATTS_TABLE_TAG, "Invio scrittura completata");
             }
 
-            snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/request", address);
+            mqtt_build_topic(topic_buffer, sizeof(topic_buffer), address, "app/request");
             printf("compare_request=%d\r\n", strncmp(event->topic, topic_buffer, event->topic_len));
             if (strncmp(event->topic, topic_buffer, event->topic_len) == 0) {
                 printf("READ DATA EEPROM\r\n");
                 if (is_mqtt_ready) {
-                    snprintf(topic_buffer, sizeof(topic_buffer), "/%s/esp/eeprom", address);
-                    publish_debug_message((u_int8_t *)&gRDEeprom, sizeof(gRDEeprom), topic_buffer, address);
+                    mqtt_publish_eeprom(address, (u_int8_t *)&gRDEeprom, sizeof(gRDEeprom));
                     ESP_LOGI(GATTS_TABLE_TAG, "eeprom sent publish successful");
                 }
             }
