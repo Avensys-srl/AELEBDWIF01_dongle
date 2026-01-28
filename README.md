@@ -54,9 +54,9 @@ ESP32 (BLE + Wi-Fi) --> AWS IoT Core (MQTT topics)
 - TLS broker in `src/mqtt_app.c`:
   - `BROKER_URL`
 - Embedded certs from `platformio.ini`:
-  - `src/aws-root-ca.pem`
-  - `src/certificate.pem.crt`
-  - `src/private.pem.key`
+  - `src/certs/aws-root-ca.pem`
+  - `src/certs/certificate.pem.crt`
+  - `src/certs/private.pem.key`
 
 Main topics (derived from device id):
 - `/[device]/app/eeprom`
@@ -95,6 +95,7 @@ Useful parameters (already set in `platformio.ini`):
 - `src/wifi_connect.c` - Wi-Fi management
 - `src/Uart1.c` - UART1 driver
 - `src/WBM_Serial.c` - WBM/Unit serial protocol
+- `src/certs/` - TLS certificates and keys (embedded)
 - `include/` - headers and definitions
 
 ## Hardware Notes

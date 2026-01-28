@@ -134,10 +134,10 @@ void Unit_Update_task (void *pvParameters);
  */
 const char *address = "a0001";  // device id address
 
-extern const uint8_t Alsaqr_pem_start[] asm("_binary_Alsaqr_pem_start");
-extern const uint8_t Alsaqr_pem_end[] asm("_binary_Alsaqr_pem_end");
-extern const uint8_t espressif_pem_start[] asm("_binary_espressif_pem_start");
-extern const uint8_t espressif_pem_end[] asm("_binary_espressif_pem_end");
+extern const uint8_t Alsaqr_pem_start[] asm("_binary_certs_Alsaqr_pem_start");
+extern const uint8_t Alsaqr_pem_end[] asm("_binary_certs_Alsaqr_pem_end");
+extern const uint8_t espressif_pem_start[] asm("_binary_certs_espressif_pem_start");
+extern const uint8_t espressif_pem_end[] asm("_binary_certs_espressif_pem_end");
 
 bool read_eeprom_data  = true;
 
