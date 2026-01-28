@@ -1,12 +1,12 @@
 # AELEBDWIF01_dongle
 
-ESP32 firmware based on ESP-IDF (PlatformIO) for Wi-Fi/BLE connectivity, MQTT to AWS IoT, and management of an external module ("Quarke"/WBM) over UART, with OTA support.
+ESP32 firmware based on ESP-IDF (PlatformIO) for Wi-Fi/BLE connectivity, MQTT to AWS IoT, and management of an external unit (Unit/WBM) over UART, with OTA support.
 
 ## Overview
 This project implements an ESP32 device that:
 - connects to a Wi-Fi network (credentials via BLE or hardcoded),
 - publishes/subscribes MQTT topics (AWS IoT Core),
-- manages serial communication with an external board (WBM/Quarke),
+- manages serial communication with an external board (WBM/Unit),
 - performs OTA updates for the ESP32 firmware and, optionally, the external board.
 
 ## Key Features
@@ -14,16 +14,16 @@ This project implements an ESP32 device that:
 - **BLE provisioning** for SSID/password with NVS storage.
 - **TLS MQTT** with embedded certificates.
 - **HTTPS OTA** with JSON version check.
-- **UART1** for WBM/Quarke serial protocol.
-- **SPIFFS** storage (used for Quarke firmware handling).
+- **UART1** for WBM/Unit serial protocol.
+- **SPIFFS** storage (used for Unit firmware handling).
 
 ## Architecture (high level)
 - **ESP32**
   - Wi-Fi + MQTT (AWS IoT)
   - BLE GATT (credentials provisioning)
   - ESP32 OTA (HTTPS)
-  - UART1 <-> WBM/Quarke
-- **WBM/Quarke**
+  - UART1 <-> WBM/Unit
+- **WBM/Unit**
   - Serial data exchange and polling
   - Firmware update downloaded by ESP32
 
@@ -36,7 +36,7 @@ ESP32 (BLE + Wi-Fi) --> AWS IoT Core (MQTT topics)
         |                       ^
         | (UART1)               |
         v                       |
-     WBM/Quarke  <--------------
+     WBM/Unit  <--------------
 ```
 
 ## Requirements
@@ -67,8 +67,8 @@ Main topics (derived from device id):
 - Version JSON URL: `VERSION_URL` in `src/main.c`
 - Current version: `CURRENT_VERSION`
 
-### Quarke Update
-- Remote firmware: `Quarke_URL` in `src/main.c`
+### Unit Update
+- Remote firmware URL: configured in `src/main.c`
 - Uses SPIFFS and custom partition table: `partition_one_ota.csv`
 
 ## Build and Flash
@@ -86,7 +86,7 @@ Useful parameters (already set in `platformio.ini`):
 - OTA + SPIFFS partition layout (`partition_one_ota.csv`)
 
 ## Repository Structure
-- `src/main.c` - entrypoint, core tasks, OTA/Quarke
+- `src/main.c` - entrypoint, core tasks, OTA/Unit
 - `src/mqtt_app.c` - MQTT client, subscriptions, publish helpers
 - `include/mqtt_app.h` - MQTT public API
 - `src/ble.c` - BLE provisioning and GATT handlers
@@ -94,7 +94,7 @@ Useful parameters (already set in `platformio.ini`):
 - `include/ble_app.h` - BLE init API
 - `src/wifi_connect.c` - Wi-Fi management
 - `src/Uart1.c` - UART1 driver
-- `src/WBM_Serial.c` - WBM/Quarke serial protocol
+- `src/WBM_Serial.c` - WBM/Unit serial protocol
 - `include/` - headers and definitions
 
 ## Hardware Notes

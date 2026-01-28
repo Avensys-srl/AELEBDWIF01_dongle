@@ -49,14 +49,14 @@ static esp_netif_t       *s_wifi_esp_netif = NULL;
 
 static const char *TAG = "wifi_connect";
 
-extern bool Quarke_Partition_State;
-extern TaskHandle_t Quarke_Update_Task_xHandle;
+extern bool Unit_Partition_State;
+extern TaskHandle_t Unit_Update_Task_xHandle;
 
 extern bool Wifi_Connected_Flag;
 
 extern void check_update_task(void *pvParameter);
 extern esp_err_t nvs_read_string(const char* key, char* value, size_t max_len);
-extern void Quarke_Update_task (void *pvParameters);
+extern void Unit_Update_task (void *pvParameters);
 
 /* set up connection, Wi-Fi or Ethernet */
 static void start(const char *ssid, const char *passwd);
@@ -144,8 +144,8 @@ esp_err_t wifi_connect(const char *ssid, const char *passwd) {
         
         // Start the firmware update task
         xTaskCreate(&check_update_task, "check_update_task", 8192, NULL, 5, NULL);
-        //if ( Quarke_Partition_State )
-		    //xTaskCreate(&Quarke_Update_task, "Quarke_Update_task", 2*8192, NULL, 5, &Quarke_Update_Task_xHandle);
+        //if ( Unit_Partition_State )
+		    //xTaskCreate(&Unit_Update_task, "Unit_Update_task", 2*8192, NULL, 5, &Unit_Update_Task_xHandle);
         return ESP_OK;
     } else {
         ESP_LOGE(TAG, "Failed to connect to Wi-Fi within timeout period");

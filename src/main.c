@@ -16,10 +16,10 @@
 #define VERSION_URL "https://mybestdocument.altervista.org/ESP32/version.json"
 #define BUFFSIZE 1024
 
-//#define Quarke_URL "https://www.alsaqr.io/.well-known/publicFIleTest/T533422LK/File1.bin"
-//#define Quarke_URL "https://dl.espressif.com/dl/esp-idf/ci/esp_http_client_demo.txt"
-//#define Quarke_URL "https://www.avensys-srl.com/ESP32/RD_ATSAM4N_Test.bin"
-#define Quarke_URL "https://www.avensys-srl.com/ESP32/RD_ATSAM4N_V1_0.bin"
+//#define Unit_URL "https://www.alsaqr.io/.well-known/publicFIleTest/T533422LK/File1.bin"
+//#define Unit_URL "https://dl.espressif.com/dl/esp-idf/ci/esp_http_client_demo.txt"
+//#define Unit_URL "https://www.avensys-srl.com/ESP32/RD_ATSAM4N_Test.bin"
+#define Unit_URL "https://www.avensys-srl.com/ESP32/RD_ATSAM4N_V1_0.bin"
 
 
 // char WIFI_SSID[30]     = "FiberHGW_ZYF75B";
@@ -57,12 +57,12 @@ static const char *TAG1 = "Main Task : ";
 
 volatile uint32_t millis_tick = 0;
 
-TaskHandle_t Quarke_Task_xHandle = NULL;
+TaskHandle_t Unit_Task_xHandle = NULL;
 TaskHandle_t Mqtt_Task_xHandle = NULL;
-static const char *TAG3 = "Quarke Task : ";
-bool Quarke_Partition_State = false;
-TaskHandle_t Quarke_Update_Task_xHandle = NULL;
-static const char *TAG_QRK_UPDATE =  "Quarke Update : ";
+static const char *TAG3 = "Unit Task : ";
+bool Unit_Partition_State = false;
+TaskHandle_t Unit_Update_Task_xHandle = NULL;
+static const char *TAG_UNIT_UPDATE =  "Unit Update : ";
 bool File_opened = false;
 FILE* f = NULL;
 char Buffer_Test[1536];
@@ -71,8 +71,8 @@ int Firmware_version_server = 0;
 char Load_Counter = 0;
 char* Pointer = NULL;
 uint16_t Data_Counter = 0;
-bool Quarke_Update_task_Flag = false;
-volatile uint32_t Quarke_Update_Counter = 0;
+bool Unit_Update_task_Flag = false;
+volatile uint32_t Unit_Update_Counter = 0;
 int Filesize = 0;
 bool Bootloader_State_Flag = false;
 char Send_Buffer[100];
@@ -116,12 +116,12 @@ uint32_t	File_Start = 0;
 bool Wifi_Connected_Flag = false;
 
 uint32_t Millis ( void );
-void Connect_To_QRK ( void );
+void Connect_To_Unit ( void );
 void WBM_Polling_Base_Data_Parse ( byte* rxBuffer );
 void WBM_Debug_Data_Parse ( byte* rxBuffer );
 void WBM_Read_Eeprom_Data_Parse ( byte* rxBuffer );
 void WBM_Write_Eeprom_Data_Parse ( byte* rxBuffer );
-void Quarke_Update_task (void *pvParameters);
+void Unit_Update_task (void *pvParameters);
 
 // MQTT address
 /**
@@ -191,8 +191,8 @@ static esp_err_t _http_event_handler(esp_http_client_event_t *evt)
             break;
         case HTTP_EVENT_DISCONNECTED:
             ESP_LOGI(TAG_OTA, "HTTP_EVENT_DISCONNECTED");
-			if (( Quarke_Partition_State ) && (!Quarke_Update_task_Flag) && (!Bootloader_State_Flag) )
-		    	xTaskCreate(&Quarke_Update_task, "Quarke_Update_task", 2*8192, NULL, 5, &Quarke_Update_Task_xHandle);
+			if (( Unit_Partition_State ) && (!Unit_Update_task_Flag) && (!Bootloader_State_Flag) )
+		    	xTaskCreate(&Unit_Update_task, "Unit_Update_task", 2*8192, NULL, 5, &Unit_Update_Task_xHandle);
             break;
     case HTTP_EVENT_REDIRECT:
         ESP_LOGI(TAG_OTA, "HTTP_EVENT_REDIRECT");
@@ -205,7 +205,7 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 {
     switch (evt->event_id) {
         case HTTP_EVENT_ERROR:
-            ESP_LOGI(TAG_QRK_UPDATE, "HTTP_EVENT_ERROR");
+            ESP_LOGI(TAG_UNIT_UPDATE, "HTTP_EVENT_ERROR");
 			No_Update = false;
 			if ( File_opened )
 				{
@@ -217,15 +217,15 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 				}
             break;
         case HTTP_EVENT_ON_CONNECTED:
-            ESP_LOGI(TAG_QRK_UPDATE, "HTTP_EVENT_ON_CONNECTED");
-			 ESP_LOGI(TAG_QRK_UPDATE, "Opening file firmware.bin");
+            ESP_LOGI(TAG_UNIT_UPDATE, "HTTP_EVENT_ON_CONNECTED");
+			 ESP_LOGI(TAG_UNIT_UPDATE, "Opening file firmware.bin");
 			f = fopen ("/spiffs/firmware.bin", "r");
 			if ( f == NULL) // the file does not exist create a new one 
 				{
 					f = fopen("/spiffs/firmware.bin", "w");
 					File_opened = true;
 					if (f == NULL) {
-						ESP_LOGE(TAG_QRK_UPDATE, "Failed to open file for writing");
+						ESP_LOGE(TAG_UNIT_UPDATE, "Failed to open file for writing");
 						File_opened = false;
 					}
 					Firmware_version = 0;
@@ -235,23 +235,23 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 					File_opened = false;
 					fread(Buffer_Test, 1, sizeof(Buffer_Test), f); // read the first 1200 bytes on the file to get firmware version
 					Firmware_version = (Buffer_Test[1173] * 100 ) + ((Buffer_Test[1172] / 16 ) * 10 ) + (Buffer_Test[1172] % 16 );
-					ESP_LOGI(TAG_QRK_UPDATE, "Firmware version stored on file = %d", Firmware_version);
+					ESP_LOGI(TAG_UNIT_UPDATE, "Firmware version stored on file = %d", Firmware_version);
 					Filesize = 0;
 					fclose (f);
-					ESP_LOGI(TAG_QRK_UPDATE, "File size = %d", Filesize);
+					ESP_LOGI(TAG_UNIT_UPDATE, "File size = %d", Filesize);
 					f = NULL;
 					memset ( Buffer_Test, 0, sizeof ( Buffer_Test));
 					Pointer = &Buffer_Test[0];
 				}
             break;
         case HTTP_EVENT_HEADER_SENT:
-            ESP_LOGI(TAG_QRK_UPDATE, "HTTP_EVENT_HEADER_SENT");
+            ESP_LOGI(TAG_UNIT_UPDATE, "HTTP_EVENT_HEADER_SENT");
             break;
         case HTTP_EVENT_ON_HEADER:
-            ESP_LOGI(TAG_QRK_UPDATE, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
+            ESP_LOGI(TAG_UNIT_UPDATE, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
             break;
         case HTTP_EVENT_ON_DATA:
-			ESP_LOGI(TAG_QRK_UPDATE, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
+			ESP_LOGI(TAG_UNIT_UPDATE, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
 			if( Firmware_version != 0) // here we compare the firmware version
 				{
 					if( Load_Counter < 3 )
@@ -264,13 +264,13 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 					if ( Load_Counter == 3) // compare firmware version from loaded file with stored file
 					{
 						Firmware_version_server = (Buffer_Test[1173] * 100 ) + ((Buffer_Test[1172] / 16 ) * 10) + (Buffer_Test[1172] % 16 );
-						ESP_LOGI(TAG_QRK_UPDATE, "Firmware version stored on server = %d", Firmware_version_server);
+						ESP_LOGI(TAG_UNIT_UPDATE, "Firmware version stored on server = %d", Firmware_version_server);
 						if ( Firmware_version_server == Firmware_version ) // same version detected no update needed
 							{
 								Load_Counter = 0;
 								Firmware_version = 0;
 								Firmware_version_server = 0;
-								ESP_LOGI(TAG_QRK_UPDATE, "No update needed , keep the same firmware on Quarke Board");
+								ESP_LOGI(TAG_UNIT_UPDATE, "No update needed , keep the same firmware on Unit Board");
 								No_Update = true;
 							}
 						else // the version is not the same update will be done
@@ -279,7 +279,7 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 								f = fopen ("/spiffs/firmware.bin", "w");
 								if ( f == NULL) // the file does not exist create a new one 
 									{
-										ESP_LOGE(TAG_QRK_UPDATE, "Failed to open file for writing");
+										ESP_LOGE(TAG_UNIT_UPDATE, "Failed to open file for writing");
 										File_opened = false;
 										Load_Counter = 0;
 										Firmware_version = 0;
@@ -287,7 +287,7 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 									}
 								else
 									{
-										ESP_LOGI(TAG_QRK_UPDATE, "Storing new firmware File on ESP32 Flash");
+										ESP_LOGI(TAG_UNIT_UPDATE, "Storing new firmware File on ESP32 Flash");
 										File_opened = true;
 										fwrite ( Buffer_Test, 1, Data_Counter, f);
 										Load_Counter = 0;
@@ -311,7 +311,7 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 								f = fopen("/spiffs/firmware.bin", "w");
 								File_opened = true;
 								if (f == NULL) {
-									ESP_LOGE(TAG_QRK_UPDATE, "Failed to open file for writing");
+									ESP_LOGE(TAG_UNIT_UPDATE, "Failed to open file for writing");
 									File_opened = false;
 								}
 								else
@@ -321,7 +321,7 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 				}
             break;
         case HTTP_EVENT_ON_FINISH:
-            ESP_LOGI(TAG_QRK_UPDATE, "HTTP_EVENT_ON_FINISH");
+            ESP_LOGI(TAG_UNIT_UPDATE, "HTTP_EVENT_ON_FINISH");
 			No_Update = false;
 			if ( File_opened )
 				{	
@@ -344,10 +344,10 @@ static esp_err_t _http1_event_handler(esp_http_client_event_t *evt)
 				}
             break;
         case HTTP_EVENT_DISCONNECTED:
-            ESP_LOGI(TAG_QRK_UPDATE, "HTTP_EVENT_DISCONNECTED");
+            ESP_LOGI(TAG_UNIT_UPDATE, "HTTP_EVENT_DISCONNECTED");
             break;
     	case HTTP_EVENT_REDIRECT:
-        	ESP_LOGI(TAG_QRK_UPDATE, "HTTP_EVENT_REDIRECT");
+        	ESP_LOGI(TAG_UNIT_UPDATE, "HTTP_EVENT_REDIRECT");
         	break;
     }
     return ESP_OK;
@@ -434,16 +434,16 @@ void check_update_task(void *pvParameter) {
     vTaskDelete(NULL);
 }
 
-void Quarke_Update_task (void *pvParameters)
+void Unit_Update_task (void *pvParameters)
 {
 
-    ESP_LOGI(TAG_QRK_UPDATE, "Checking for Quarke firmware");
+    ESP_LOGI(TAG_UNIT_UPDATE, "Checking for Unit firmware");
 
-	Quarke_Update_task_Flag = true;
+	Unit_Update_task_Flag = true;
 	//gpio_set_level( Wifi_Ready, 0);
 
     esp_http_client_config_t http_config1 = {
-        .url = Quarke_URL,
+        .url = Unit_URL,
         .event_handler = _http1_event_handler,
 		//.cert_pem = (const char *)Alsaqr_pem_start,
 		//.skip_cert_common_name_check=true,
@@ -455,14 +455,14 @@ void Quarke_Update_task (void *pvParameters)
     esp_err_t err = esp_http_client_perform(client1);
 
 	 if (err == ESP_OK) {
-        ESP_LOGI(TAG_QRK_UPDATE, "HTTP GET request succeeded");
+        ESP_LOGI(TAG_UNIT_UPDATE, "HTTP GET request succeeded");
  
     } else {
-        ESP_LOGE(TAG_QRK_UPDATE, "HTTP GET request failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG_UNIT_UPDATE, "HTTP GET request failed: %s", esp_err_to_name(err));
 	}
 
 		esp_http_client_cleanup(client1);
-		Quarke_Update_task_Flag = false;
+		Unit_Update_task_Flag = false;
 		//gpio_set_level( Wifi_Ready, 1);
     	vTaskDelete(NULL);
 }
@@ -471,9 +471,9 @@ static void Led_TimerCallback (TimerHandle_t xTimer) // 1ms Timer
 {
     millis_tick++;
     //Counter_Led++;
-	Quarke_Update_Counter++;
+	Unit_Update_Counter++;
 
-	if ( Quarke_Update_task_Flag)
+	if ( Unit_Update_task_Flag)
 	{
 		Counter_Led++;
 		if ( Counter_Led <= 150 )
@@ -575,7 +575,7 @@ static void Led_TimerCallback (TimerHandle_t xTimer) // 1ms Timer
     }
 }
 
-static void Quarke_event_task(void *pvParameters)
+static void Unit_event_task(void *pvParameters)
 {
     WBM_Com_State = WBM_initialize ;
 
@@ -601,7 +601,7 @@ static void Quarke_event_task(void *pvParameters)
 	uint8_t       *debug_data;
     uint8_t       *polling_data;
 
-	ESP_LOGI(TAG3, "Quarke Task Started");
+	ESP_LOGI(TAG3, "Unit Task Started");
 
     for (;;) {
 
@@ -616,16 +616,16 @@ static void Quarke_event_task(void *pvParameters)
 				break;
 			
 			case WBM_Communicating:
-				Connect_To_QRK ();
+				Connect_To_Unit ();
 				break;
 			
 			case WBM_Connected:
 
-				if ( Quarke_Update_Counter >= 86400000 ) // 24 hours to check new quarke board firmware on server
+				if ( Unit_Update_Counter >= 86400000 ) // 24 hours to check new unit board firmware on server
 				{
-					Quarke_Update_Counter = 0;
-					if (( Quarke_Partition_State ) && (!Quarke_Update_task_Flag) && (!Bootloader_State_Flag))
-		    				xTaskCreate(&Quarke_Update_task, "Quarke_Update_task", 2*8192, NULL, 5, &Quarke_Update_Task_xHandle);
+					Unit_Update_Counter = 0;
+					if (( Unit_Partition_State ) && (!Unit_Update_task_Flag) && (!Bootloader_State_Flag))
+		    				xTaskCreate(&Unit_Update_task, "Unit_Update_task", 2*8192, NULL, 5, &Unit_Update_Task_xHandle);
 				}
 
 				if ( Millis() < gKTSGlobal.LastReceivedPollingBase_TimerMilliseconds)
@@ -669,7 +669,7 @@ static void Quarke_event_task(void *pvParameters)
 				
 				if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 					{
-						WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+						WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 						retriesCounter = 0;
 						Eeprom_Data_received = false;
 						Read_Eeprom_Request_Index = 0;
@@ -969,7 +969,7 @@ void app_main(void) {
         return;
     } else {
         ESP_LOGI(TAG1, "Partition size: total: %d, used: %d", total, used);
-		Quarke_Partition_State = true;
+		Unit_Partition_State = true;
 		//remove("/spiffs/firmware.bin"); // *********************
 		//esp_spiffs_format(conf.partition_label);// *********************
     }
@@ -1005,8 +1005,8 @@ void app_main(void) {
 
    vTaskDelay(100);
 
-   //Create a task to handle Data comming from Quarke Board
-   xTaskCreate(Quarke_event_task, "Quarke_event_task", 2*2048, NULL, 2, &Quarke_Task_xHandle);
+   //Create a task to handle Data comming from Unit Board
+   xTaskCreate(Unit_event_task, "Unit_event_task", 2*2048, NULL, 2, &Unit_Task_xHandle);
 }
 
 uint32_t Millis ( void )
@@ -1014,7 +1014,7 @@ uint32_t Millis ( void )
 	return millis_tick;
 }
 
-void Connect_To_QRK ( void )
+void Connect_To_Unit ( void )
 {
     uint8_t* Pointer;
 	uint8_t* Pointer1;
@@ -1036,13 +1036,13 @@ void Connect_To_QRK ( void )
 			}
 			currentState = CLKTSConnectState_TrySerialLink;
 			break;
-		case CLKTSConnectState_TrySerialLink: // wait response from Quarke Board
+		case CLKTSConnectState_TrySerialLink: // wait response from Unit Board
 			
 			if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 				{
 					if ( retriesCounter == 2 )
 					{
-							WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+							WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 							retriesCounter = 0;
 							Uart1_Initialize_1 ( );
 							currentState = CLKTSConnectState_Init ;
@@ -1081,7 +1081,7 @@ void Connect_To_QRK ( void )
 		case CLKTSConnectState_ReadEeprom_Info:
 			if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 				{
-					WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+					WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 					retriesCounter = 0;
 				}
 			else
@@ -1103,7 +1103,7 @@ void Connect_To_QRK ( void )
 		case CLKTSConnectState_ReadEeprom_Configuration:
 			 if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 				{
-					WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+					WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 					retriesCounter = 0;
 				}
 			else
@@ -1125,7 +1125,7 @@ void Connect_To_QRK ( void )
 		case CLKTSConnectState_ReadEeprom_SettingPar:
 			 if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 				{
-					WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+					WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 					retriesCounter = 0;
 				}
 			else
@@ -1147,7 +1147,7 @@ void Connect_To_QRK ( void )
 		case CLKTSConnectState_ReadEeprom_SetTemp:
 			if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 				{
-					WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+					WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 					retriesCounter = 0;
 				}
 			else
@@ -1169,7 +1169,7 @@ void Connect_To_QRK ( void )
 		case CLKTSConnectState_ReadEeprom_DayProg:
 			if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 				{
-					WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+					WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 					retriesCounter = 0;
 				}
 			else
@@ -1191,7 +1191,7 @@ void Connect_To_QRK ( void )
 		case CLKTSConnectState_ReadEeprom_HWSetting:
 			if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 				{
-					WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+					WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 					retriesCounter = 0;
 				}
 			else
@@ -1213,7 +1213,7 @@ void Connect_To_QRK ( void )
 		case CLKTSConnectState_PollingBase:
 			if (((Millis() - globalTimeoutMilliseconds) >= TimeoutMilliseconds) || (Millis() < globalTimeoutMilliseconds))
 				{
-					WBM_Com_State = WBM_Error ; // no connection with Quarke board after Timeout
+					WBM_Com_State = WBM_Error ; // no connection with Unit board after Timeout
 					retriesCounter = 0;
 				}
 			else
@@ -1238,7 +1238,7 @@ void Connect_To_QRK ( void )
 			gKTSGlobal.PollingDebugData_TimerMilliseconds	= gKTSGlobal.PollingBase_TimerMilliseconds;
 			WBM_Com_State = WBM_Connected ;
 			WBM_Polling_Base_Data_Parse ( buff_ser1 );
-            ESP_LOGI(TAG1, "WBM connected to Quarke" );
+            ESP_LOGI(TAG1, "WBM connected to Unit" );
 			esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_EEPROM_DATA], sizeof(gRDEeprom), (u_int8_t *)&gRDEeprom);
 
 			address = (const char *)&gRDEeprom.SerialString;
@@ -1255,7 +1255,7 @@ void Connect_To_QRK ( void )
 			break;
 
 		case Bootloader_State:
-			if ( !Quarke_Update_task_Flag ) // check if we are not in quarke firmware update task
+			if ( !Unit_Update_task_Flag ) // check if we are not in unit firmware update task
 			{
 				Bootloader_State_Flag = true; // here we are in bootloader upgrade mode, so no update is allowed from server
 				vTaskDelay(5);

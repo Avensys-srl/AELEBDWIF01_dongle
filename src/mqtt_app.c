@@ -13,12 +13,12 @@ static uint8_t s_subscribe_counter = 0;
 
 extern S_EEPROM gRDEeprom;
 extern uint16_t Read_Eeprom_Request_Index;
-extern bool Quarke_Partition_State;
-extern bool Quarke_Update_task_Flag;
+extern bool Unit_Partition_State;
+extern bool Unit_Update_task_Flag;
 extern bool Bootloader_State_Flag;
-extern TaskHandle_t Quarke_Update_Task_xHandle;
+extern TaskHandle_t Unit_Update_Task_xHandle;
 extern bool Wifi_Connected_Flag;
-extern void Quarke_Update_task(void *pvParameters);
+extern void Unit_Update_task(void *pvParameters);
 
 extern const uint8_t aws_root_ca_pem_start[] asm("_binary_aws_root_ca_pem_start");
 extern const uint8_t certificate_pem_crt_start[] asm("_binary_certificate_pem_crt_start");
@@ -107,8 +107,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_CONNECTED");
             mqtt_subscribe_app_topics(address);
-            if ((Quarke_Partition_State) && (!Quarke_Update_task_Flag) && (!Bootloader_State_Flag)) {
-                xTaskCreate(&Quarke_Update_task, "Quarke_Update_task", 2 * 8192, NULL, 5, &Quarke_Update_Task_xHandle);
+            if ((Unit_Partition_State) && (!Unit_Update_task_Flag) && (!Bootloader_State_Flag)) {
+                xTaskCreate(&Unit_Update_task, "Unit_Update_task", 2 * 8192, NULL, 5, &Unit_Update_Task_xHandle);
             }
             break;
         case MQTT_EVENT_DISCONNECTED:
@@ -171,8 +171,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                 log_error_if_nonzero("captured as transport's socket errno", event->error_handle->esp_transport_sock_errno);
                 ESP_LOGI(GATTS_TABLE_TAG, "Last errno string (%s)", strerror(event->error_handle->esp_transport_sock_errno));
             }
-            if ((Quarke_Partition_State) && (!Quarke_Update_task_Flag) && (!Bootloader_State_Flag)) {
-                xTaskCreate(&Quarke_Update_task, "Quarke_Update_task", 2 * 8192, NULL, 5, &Quarke_Update_Task_xHandle);
+            if ((Unit_Partition_State) && (!Unit_Update_task_Flag) && (!Bootloader_State_Flag)) {
+                xTaskCreate(&Unit_Update_task, "Unit_Update_task", 2 * 8192, NULL, 5, &Unit_Update_Task_xHandle);
             }
             break;
         default:
