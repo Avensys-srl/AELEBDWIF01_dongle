@@ -103,6 +103,8 @@ Useful parameters (already set in `platformio.ini`):
 - `src/ble.c` - BLE provisioning and GATT handlers
 - `src/ble_app.c` - BLE stack init
 - `include/ble_app.h` - BLE init API
+- `src/unit_comm.c` - UART/WBM unit communication and state machine
+- `include/unit_comm.h` - Unit communication API
 - `src/wifi_connect.c` - Wi-Fi management
 - `src/Uart1.c` - UART1 driver
 - `src/WBM_Serial.c` - WBM/Unit serial protocol
