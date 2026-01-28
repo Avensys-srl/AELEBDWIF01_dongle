@@ -20,9 +20,9 @@ extern TaskHandle_t Unit_Update_Task_xHandle;
 extern bool Wifi_Connected_Flag;
 extern void Unit_Update_task(void *pvParameters);
 
-extern const uint8_t aws_root_ca_pem_start[] asm("_binary_certs_aws_root_ca_pem_start");
-extern const uint8_t certificate_pem_crt_start[] asm("_binary_certs_certificate_pem_crt_start");
-extern const uint8_t private_pem_key_start[] asm("_binary_certs_private_pem_key_start");
+extern const uint8_t aws_root_ca_pem_start[] asm("_binary_aws_root_ca_pem_start");
+extern const uint8_t certificate_pem_crt_start[] asm("_binary_certificate_pem_crt_start");
+extern const uint8_t private_pem_key_start[] asm("_binary_private_pem_key_start");
 
 static void log_error_if_nonzero(const char *message, int error_code) {
     if (error_code != 0) {
