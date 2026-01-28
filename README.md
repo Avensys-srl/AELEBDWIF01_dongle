@@ -50,6 +50,17 @@ ESP32 (BLE + Wi-Fi) --> AWS IoT Core (MQTT topics)
 - Or provisioned via BLE:
   - Stored in NVS keys `wifi_ssid` and `wifi_pass`
 
+#### BLE Provisioning Status Codes
+| Code | State | Meaning |
+| --- | --- | --- |
+| 0 | IDLE | Not used / default |
+| 1 | WAIT_SSID | Waiting for SSID |
+| 2 | WAIT_PASSWORD | Waiting for password |
+| 3 | READY | SSID + password received |
+| 4 | APPLYING | Applying provisioning / connecting |
+| 5 | DONE | Provisioning complete |
+| 6 | ERROR | Provisioning error (e.g. timeout) |
+
 ### MQTT / AWS IoT
 - TLS broker in `src/mqtt_app.c`:
   - `BROKER_URL`
