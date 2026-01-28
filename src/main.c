@@ -1,4 +1,5 @@
 #include "main.h"
+#include "mqtt_app.h"
 #include "CL_WBM.h"
 #include "protocol_Serial.h"
 #include "esp_ota_ops.h"
@@ -20,7 +21,6 @@
 #define Quarke_URL "https://www.avensys-srl.com/ESP32/RD_ATSAM4N_V1_0.bin"
 
 
-char *BROKER_URL = "mqtts://a3qi68kx39kjfk-ats.iot.eu-central-1.amazonaws.com:8883";
 // char WIFI_SSID[30]     = "FiberHGW_ZYF75B";
 // char WIFI_PASSWORD[30] = "XNfXFYxURF9K";
 char WIFI_SSID[MAX_SSID_LENGTH + 1]  = "FASTWEB-DA0E83";
@@ -34,8 +34,6 @@ bool Ota_In_Progress = false;
 
 static char *json_response = NULL;
 static int total_len = 0;
-
-bool is_mqtt_ready = false;
 
 bool send_eeprom_read_request = false;
 
@@ -125,8 +123,6 @@ void WBM_Write_Eeprom_Data_Parse ( byte* rxBuffer );
 void Quarke_Update_task (void *pvParameters);
 
 // MQTT address
-
-int msg_id;
 char topic_buffer[64];
 /**
  * @brief The MQTT address of the device.
@@ -138,184 +134,16 @@ char topic_buffer[64];
  */
 const char *address = "a0001";  // device id address
 
-esp_mqtt_client_handle_t client;
-uint8_t Subscribe_Counter = 0;
-
-/**
- * @brief External declarations of binary data arrays.
- *
- * These declarations define the start and end addresses of various binary data arrays
- * used in the project. The arrays include AWS root CA certificate, certificate PEM,
- * and private PEM key.
- *
- * The arrays are defined using the asm directive to specify their start and end addresses.
- * The arrays are used for secure communication with AWS services.
- */
-extern const uint8_t aws_root_ca_pem_start[] asm("_binary_aws_root_ca_pem_start");         /**< Start address of AWS root CA certificate array */
-extern const uint8_t aws_root_ca_pem_end[] asm("_binary_aws_root_ca_pem_end");             /**< End address of AWS root CA certificate array */
-extern const uint8_t certificate_pem_crt_start[] asm("_binary_certificate_pem_crt_start"); /**< Start address of certificate PEM array */
-extern const uint8_t certificate_pem_crt_end[] asm("_binary_certificate_pem_crt_end");     /**< End address of certificate PEM array */
-extern const uint8_t private_pem_key_start[] asm("_binary_private_pem_key_start");         /**< Start address of private PEM key array */
-extern const uint8_t private_pem_key_end[] asm("_binary_private_pem_key_end");             /**< End address of private PEM key array */
 extern const uint8_t Alsaqr_pem_start[] asm("_binary_Alsaqr_pem_start");
 extern const uint8_t Alsaqr_pem_end[] asm("_binary_Alsaqr_pem_end");
 extern const uint8_t espressif_pem_start[] asm("_binary_espressif_pem_start");
 extern const uint8_t espressif_pem_end[] asm("_binary_espressif_pem_end");
 
 bool read_eeprom_data  = true;
-bool write_eeprom_data = false;
-bool is_bluetooth      = true;
 
 extern bool Bootloader_Mode;
 extern bool Ack_Received;
 
-static void log_error_if_nonzero(const char *message, int error_code) {
-    if (error_code != 0) {
-        ESP_LOGE(GATTS_TABLE_TAG, "Last error %s: 0x%x", message, error_code);
-    }
-}
-
-void publish_debug_message(const uint8_t *data, size_t data_len, const char *topic, const char *address) {
-        char json_buffer[1024]; // Adjust the size according to your message length
-        int json_len;
-
-        // Format the JSON message
-        json_len = snprintf(json_buffer, sizeof(json_buffer), "{\"message\":\"");
-
-        // Append data array
-        for (size_t i = 0; i < data_len; i++) {
-            json_len += snprintf(json_buffer + json_len, sizeof(json_buffer) - json_len, "%d", data[i]);
-            if (i < data_len - 1) {
-                json_len += snprintf(json_buffer + json_len, sizeof(json_buffer) - json_len, ",");
-            }
-        }
-
-        // Finish JSON message
-        json_len += snprintf(json_buffer + json_len, sizeof(json_buffer) - json_len, "\",\"topic\":\"%s\",\"address\":\"%s\"}", topic, address);
-
-        // Publish the JSON message via MQTT
-        if (is_mqtt_ready) {
-            msg_id = esp_mqtt_client_publish(client, topic_buffer, json_buffer, json_len, 0, 0);
-            ESP_LOGI(GATTS_TABLE_TAG, "%s publish successful, msg_id=%d", topic, msg_id);
-        }
-    }
-
-/**
- * @brief Event handler registered to receive MQTT events
- *
- *  This function is called by the MQTT client event loop.
- *
- * @param handler_args user data registered to the event.
- * @param base Event base for the handler(always MQTT Base in this example).
- * @param event_id The id for the received event.
- * @param event_data The data for the event, esp_mqtt_event_handle_t.
- */
-static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
-    ESP_LOGD(GATTS_TABLE_TAG, "Event dispatched from event loop base=%s, event_id=%ld", base, event_id);
-    esp_mqtt_event_handle_t event = event_data;
-    client                        = event->client;
-    int msg_id;
-	address = (const char *)&gRDEeprom.SerialString;
-
-
-
-    switch ((esp_mqtt_event_id_t)event_id) {
-        case MQTT_EVENT_CONNECTED:
-            ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_CONNECTED");
-
-			if ( strlen ((char*)gRDEeprom.SerialString) != 0 )
-				{
-					// Subscribe to the EEEPROM Data
-					snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/eeprom", address);
-					msg_id = esp_mqtt_client_subscribe(client, topic_buffer, 0);
-					ESP_LOGI(GATTS_TABLE_TAG, "sent subscribe successful, msg_id=%d", msg_id);
-
-					// Subscribe to the EEPROM Data Request
-					snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/request", address);
-					msg_id = esp_mqtt_client_subscribe(client, topic_buffer, 0);
-					ESP_LOGI(GATTS_TABLE_TAG, "sent subscribe successful, msg_id=%d", msg_id);
-				}
-
-            //is_mqtt_ready = true;
-			if (( Quarke_Partition_State ) && (!Quarke_Update_task_Flag) && (!Bootloader_State_Flag) )
-		    	xTaskCreate(&Quarke_Update_task, "Quarke_Update_task", 2*8192, NULL, 5, &Quarke_Update_Task_xHandle);
-            break;
-        case MQTT_EVENT_DISCONNECTED:
-            ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_DISCONNECTED");
-
-            is_mqtt_ready = false;
-			Subscribe_Counter = 0;
-            break;
-
-        case MQTT_EVENT_SUBSCRIBED:
-            ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-			if ( Subscribe_Counter == 1)
-				{
-					is_mqtt_ready = true;
-					Subscribe_Counter = 0;
-					ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_SUBSCRIBTION FINISHED.");
-				}
-			else
-					Subscribe_Counter++;
-            break;
-        case MQTT_EVENT_UNSUBSCRIBED:
-            ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
-            break;
-        case MQTT_EVENT_PUBLISHED:
-            ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
-            break;
-        case MQTT_EVENT_DATA:
-            ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_DATA");
-            printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-            printf("DATA=%.*s\r\n", event->data_len, event->data);
-			
-			snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/eeprom", address);
-            printf("compare_eeprom=%d\r\n", strncmp(event->topic, topic_buffer, event->topic_len));
-
-			if (strncmp(event->topic, topic_buffer, event->topic_len) == 0) {
-                memcpy(&gRDEeprom, event->data, sizeof(gRDEeprom));
-                //ESP_LOGI(GATTS_TABLE_TAG, "Speed : %d", gRDEeprom.Set_StepMotorsFSC_CAF[3]);
-				ESP_LOGI(GATTS_TABLE_TAG, "Speed : %d", gRDEeprom.sel_idxStepMotors);
-				Read_Eeprom_Request_Index |= 0x800;
-				Read_Eeprom_Request_Index |= 0x1000;
-				Read_Eeprom_Request_Index |= 0x2000;
-				Read_Eeprom_Request_Index |= 0x4000;
-				Read_Eeprom_Request_Index |= 0x8000;
-				ESP_LOGI(GATTS_TABLE_TAG, "Invio scrittura completata");
-                //write_eeprom_data = true;
-                //is_bluetooth      = false;
-            }
-
-			// Proccess EEPROM Data received from app via MQTT
-            snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/request", address);
-            printf("compare_request=%d\r\n", strncmp(event->topic, topic_buffer, event->topic_len));
-            if (strncmp(event->topic, topic_buffer, event->topic_len) == 0) {
-                printf("READ DATA EEPROM\r\n");
-				if (is_mqtt_ready) {
-				// Publish EEPROM Data to the App via MQTT
-				snprintf(topic_buffer, sizeof(topic_buffer), "/%s/esp/eeprom", address);
-				publish_debug_message((u_int8_t *)&gRDEeprom, sizeof(gRDEeprom), topic_buffer, address);
-				ESP_LOGI(GATTS_TABLE_TAG, "eeprom sent publish successful");
-				}	
-            }
-
-            break;
-        case MQTT_EVENT_ERROR:
-            ESP_LOGI(GATTS_TABLE_TAG, "MQTT_EVENT_ERROR");
-            if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
-                log_error_if_nonzero("reported from esp-tls", event->error_handle->esp_tls_last_esp_err);
-                log_error_if_nonzero("reported from tls stack", event->error_handle->esp_tls_stack_err);
-                log_error_if_nonzero("captured as transport's socket errno", event->error_handle->esp_transport_sock_errno);
-                ESP_LOGI(GATTS_TABLE_TAG, "Last errno string (%s)", strerror(event->error_handle->esp_transport_sock_errno));
-            }
-			if (( Quarke_Partition_State ) && (!Quarke_Update_task_Flag) && (!Bootloader_State_Flag) )
-		    	xTaskCreate(&Quarke_Update_task, "Quarke_Update_task", 2*8192, NULL, 5, &Quarke_Update_Task_xHandle);
-            break;
-        default:
-            ESP_LOGI(GATTS_TABLE_TAG, "Other event id:%d", event->event_id);
-            break;
-    }
-}
 esp_err_t nvs_read_string(const char* key, char* value, size_t max_len) {
     nvs_handle_t my_handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &my_handle);
@@ -328,76 +156,6 @@ esp_err_t nvs_read_string(const char* key, char* value, size_t max_len) {
     }
     nvs_close(my_handle);
     return err;
-}
-
-//esp_mqtt_client_handle_t client;
-
-/**
- * @brief Starts the MQTT client and initializes the MQTT client configuration.
- *
- * This function initializes the MQTT client configuration with the provided broker URL,
- * certificate, and authentication key. It then initializes the MQTT client and registers
- * the event handler. Finally, it starts the MQTT client.
- */
-static void mqtt_app_start(void) {
-    const esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri                     = BROKER_URL,
-        .broker.verification.certificate        = (const char *)aws_root_ca_pem_start,
-        .credentials.authentication.certificate = (const char *)certificate_pem_crt_start,
-        .credentials.authentication.key         = (const char *)private_pem_key_start,
-    };
-
-    ESP_LOGI(GATTS_TABLE_TAG, "[APP] Free memory: %ld bytes", esp_get_free_heap_size());
-    /*esp_mqtt_client_handle_t */client = esp_mqtt_client_init(&mqtt_cfg);
-    /* The last argument may be used to pass data to the event handler, in this example mqtt_event_handler */
-    esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
-    esp_mqtt_client_start(client);
-}
-
-static void mqtt_app_stop(void) {
-
-    ESP_LOGI(GATTS_TABLE_TAG, "[APP] Free memory: %ld bytes", esp_get_free_heap_size());
-    /* The last argument may be used to pass data to the event handler, in this example mqtt_event_handler */
-    esp_mqtt_client_disconnect(client);
-}
-
-/**
- * @brief Task function for MQTT communication.
- *
- * This task initializes the UART, connects to the Wi-Fi network, and starts the MQTT application.
- * It then enters an infinite loop where it periodically delays for 1 second.
- *
- * @param arg Pointer to the task argument (not used in this case).
- */
-void mqtt_task(void *arg) {
-    // Wait for uart initialization
-    vTaskDelay(1000);
-
-	if ( !Wifi_Connected_Flag )
-    	ESP_ERROR_CHECK(wifi_connect(WIFI_SSID, WIFI_PASSWORD));
-
-    mqtt_app_start();
-
-    while (1) {
-        /*
-         * Connects to a new Wi-Fi network if the SSID, password, and connection flag are all true.
-         * Disconnects from the current Wi-Fi network before connecting to the new one.
-         * Updates the connection status flags after the connection attempt.
-         */
-        if (wifi_is_ssid_send == true && wifi_is_pass_send == true && connect_to_wifi == true) {
-            ESP_LOGI(GATTS_TABLE_TAG, "WIFI_SSID: %s", WIFI_SSID);
-            ESP_LOGI(GATTS_TABLE_TAG, "WIFI_PASSWORD: %s", WIFI_PASSWORD);
-
-            wifi_disconnect();                                        // Disconnect from the current Wi-Fi network
-            ESP_ERROR_CHECK(wifi_connect(WIFI_SSID, WIFI_PASSWORD));  // Connect to the new Wi-Fi network
-
-            wifi_is_ssid_send = false;
-            wifi_is_pass_send = false;
-            connect_to_wifi   = false;
-        }
-
-        vTaskDelay(1);
-    }
 }
 
 static esp_err_t _http_event_handler(esp_http_client_event_t *evt)
@@ -1531,18 +1289,9 @@ void Connect_To_QRK ( void )
             ESP_LOGI(TAG1, "WBM connected to Quarke" );
 			esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_EEPROM_DATA], sizeof(gRDEeprom), (u_int8_t *)&gRDEeprom);
 
-			int msg_id1;
 			address = (const char *)&gRDEeprom.SerialString;
 
-			// Subscribe to the EEEPROM Data
-			snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/eeprom", address);
-			msg_id1 = esp_mqtt_client_subscribe(client, topic_buffer, 0);
-			ESP_LOGI(TAG1, "sent subscribe successful, msg_id=%d", msg_id1);
-
-			// Subscribe to the EEPROM Data Request
-			snprintf(topic_buffer, sizeof(topic_buffer), "/%s/app/request", address);
-			msg_id1 = esp_mqtt_client_subscribe(client, topic_buffer, 0);
-			ESP_LOGI(TAG1, "sent subscribe successful, msg_id=%d", msg_id1);
+			mqtt_subscribe_app_topics(address);
 
 			vTaskDelay(350);
 

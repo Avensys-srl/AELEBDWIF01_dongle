@@ -13,7 +13,6 @@
 #include "esp_gatts_api.h"
 #include "esp_log.h"
 #include "esp_bt_device.h"
-#include "main.h"
 
 #define GATTS_TABLE_TAG "ESP_BLE"
 
@@ -24,8 +23,6 @@
 #define SVC_INST_ID     0
 
 extern uint16_t ble_handle_table[];
-
-extern uint16_t temp_ble;
 
 /* Attributes State Machine */
 enum {

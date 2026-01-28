@@ -21,7 +21,6 @@
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
-#include "mqtt_client.h"
 #include "nvs_flash.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -37,6 +36,7 @@
 
 #define MAX_SSID_LENGTH 32
 #define MAX_PASSWORD_LENGTH 64
+#define MQTT_TASK_STACK_SIZE (5000)
 
 extern char WIFI_SSID[MAX_SSID_LENGTH + 1];
 extern char WIFI_PASSWORD[MAX_PASSWORD_LENGTH + 1];
@@ -45,9 +45,7 @@ extern bool connect_to_wifi;
 extern bool wifi_is_ssid_send;
 extern bool wifi_is_pass_send;
 
-extern esp_mqtt_client_handle_t client;
 extern bool                     read_eeprom_data;
-extern bool                     is_mqtt_ready;
 extern bool                     send_eeprom_read_request;
 
 typedef  enum{

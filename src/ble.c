@@ -11,13 +11,8 @@
 
 #define ADV_CONFIG_FLAG      (1 << 0)
 #define SCAN_RSP_CONFIG_FLAG (1 << 1)
-#define TEMP_BUFFER_SIZE 32
-char temp_buffer[TEMP_BUFFER_SIZE + 1]; // +1 per il terminatore di stringa nullo
-
 static uint8_t adv_config_done = 0;
 
-extern bool  write_eeprom_data;
-extern bool is_bluetooth;
 extern uint16_t Read_Eeprom_Request_Index;
 extern S_EEPROM gRDEeprom;
 
@@ -295,7 +290,7 @@ static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] = {
 
 
 // Funzione per scrivere una stringa nella NVS
-esp_err_t nvs_write_string(const char* key, const char* value) {
+static esp_err_t nvs_write_string(const char* key, const char* value) {
     nvs_handle_t my_handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &my_handle);
     if (err != ESP_OK) return err;
@@ -351,7 +346,7 @@ void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
     }
 }
 
-void prepare_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param) {
+static void prepare_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param) {
     ESP_LOGI(GATTS_TABLE_TAG, "prepare write, handle = %d, value len = %d", param->write.handle, param->write.len);
     esp_gatt_status_t status = ESP_GATT_OK;
     if (prepare_write_env->prepare_buf == NULL) {
@@ -394,7 +389,7 @@ void prepare_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare
     prepare_write_env->prepare_len += param->write.len;
 }
 
-void exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param) {
+static void exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param) {
     if (param->exec_write.exec_write_flag == ESP_GATT_PREP_WRITE_EXEC && prepare_write_env->prepare_buf) {
         esp_log_buffer_hex(GATTS_TABLE_TAG, prepare_write_env->prepare_buf, prepare_write_env->prepare_len);
          ESP_LOGI(GATTS_TABLE_TAG, "Lenght : %d", prepare_write_env->prepare_len);
@@ -455,7 +450,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
             // ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_READ_EVT");
             break;
 
-case ESP_GATTS_WRITE_EVT:
+        case ESP_GATTS_WRITE_EVT:
             if (!param->write.is_prep) {
                 ESP_LOGI(GATTS_TABLE_TAG, "GATT_WRITE_EVT, handle = %d, value len = %d", param->write.handle, param->write.len);
                 esp_log_buffer_hex(GATTS_TABLE_TAG, param->write.value, param->write.len);
@@ -466,7 +461,7 @@ case ESP_GATTS_WRITE_EVT:
                     if (ssid_packet.data == NULL) {
                     ssid_packet.data = malloc(param->write.len);
                     if (ssid_packet.data == NULL) {
-                        ESP_LOGE(GATTS_TABLE_TAG, "Failed to allocate memory for SSID packet");
+                        ESP_LOGE(GATTS_TABLE_TAG, "Failed to allocate memory for password packet");
                         break;
                     }
                     memcpy(ssid_packet.data, param->write.value, param->write.len);
@@ -476,18 +471,20 @@ case ESP_GATTS_WRITE_EVT:
                         if (new_len <= MAX_SSID_LENGTH) {
                             uint8_t *new_data = realloc(ssid_packet.data, new_len);
                             if (new_data == NULL) {
-                                ESP_LOGE(GATTS_TABLE_TAG, "Failed to reallocate memory for SSID packet");
+                                ESP_LOGE(GATTS_TABLE_TAG, "Failed to reallocate memory for password packet");
                                 free(ssid_packet.data);
                                 ssid_packet.data = NULL;
+                                ssid_packet.len = 0;
                                 break;
                             }
                             memcpy(new_data + ssid_packet.len, param->write.value, param->write.len);
                             ssid_packet.data = new_data;
                             ssid_packet.len = new_len;
                         } else {
-                            ESP_LOGE(GATTS_TABLE_TAG, "SSID packet length exceeds maximum length");
+                            ESP_LOGE(GATTS_TABLE_TAG, "Password packet length exceeds maximum length");
                             free(ssid_packet.data);
                             ssid_packet.data = NULL;
+                            ssid_packet.len = 0;
                         }
                     }
 
@@ -519,12 +516,13 @@ case ESP_GATTS_WRITE_EVT:
                     password_packet.len = param->write.len;
                     } else {
                         size_t new_len = password_packet.len + param->write.len;
-                        if (new_len <= MAX_SSID_LENGTH) {
+                        if (new_len <= MAX_PASSWORD_LENGTH) {
                             uint8_t *new_data = realloc(password_packet.data, new_len);
                             if (new_data == NULL) {
                                 ESP_LOGE(GATTS_TABLE_TAG, "Failed to reallocate memory for SSID packet");
                                 free(password_packet.data);
                                 password_packet.data = NULL;
+                                password_packet.len = 0;
                                 break;
                             }
                             memcpy(new_data + password_packet.len, param->write.value, param->write.len);
@@ -534,6 +532,7 @@ case ESP_GATTS_WRITE_EVT:
                             ESP_LOGE(GATTS_TABLE_TAG, "SSID packet length exceeds maximum length");
                             free(password_packet.data);
                             password_packet.data = NULL;
+                            password_packet.len = 0;
                         }
                     }
 

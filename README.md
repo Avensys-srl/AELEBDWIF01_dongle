@@ -39,7 +39,7 @@ This project implements an ESP32 device that:
   - Stored in NVS keys `wifi_ssid` and `wifi_pass`
 
 ### MQTT / AWS IoT
-- TLS broker in `src/main.c`:
+- TLS broker in `src/mqtt_app.c`:
   - `BROKER_URL`
 - Embedded certs from `platformio.ini`:
   - `src/aws-root-ca.pem`
@@ -74,7 +74,9 @@ Useful parameters (already set in `platformio.ini`):
 - OTA + SPIFFS partition layout (`partition_one_ota.csv`)
 
 ## Repository Structure
-- `src/main.c` - entrypoint, core tasks, MQTT/OTA/Quarke
+- `src/main.c` - entrypoint, core tasks, OTA/Quarke
+- `src/mqtt_app.c` - MQTT client, subscriptions, publish helpers
+- `include/mqtt_app.h` - MQTT public API
 - `src/ble.c` - BLE provisioning
 - `src/wifi_connect.c` - Wi-Fi management
 - `src/Uart1.c` - UART1 driver
