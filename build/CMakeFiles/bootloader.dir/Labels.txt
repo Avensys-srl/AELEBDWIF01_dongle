@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/CMakeFiles/bootloader
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/CMakeFiles/bootloader.rule
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/CMakeFiles/bootloader-complete.rule
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+W:/AELEBDWIF01_Files_30102025/AELEBDWIF01_dongle/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule

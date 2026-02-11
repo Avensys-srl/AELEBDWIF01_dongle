@@ -109,6 +109,7 @@ Useful parameters (already set in `platformio.ini`):
 - `src/Uart1.c` - UART1 driver
 - `src/WBM_Serial.c` - WBM/Unit serial protocol
 - `src/certs/` - TLS certificates and keys (embedded)
+- `docs/BLE_WIFI_APP_INTEGRATION.md` - React Native BLE/Wi-Fi integration contract
 - `include/` - headers and definitions
 
 ## Hardware Notes

@@ -33,5 +33,6 @@
     "idf.adapterTargetName": "esp32",
     "idf.pythonInstallPath": "C:\\Users\\PC\\.espressif\\tools\\idf-python\\3.8.7\\python.exe",
     "idf.espIdfPathWin": "C:/Users/PC/Desktop/esp-idf/",
-    "idf.toolsPathWin": "C:\\Users\\PC\\.espressif"
+    "idf.toolsPathWin": "C:\\Users\\PC\\.espressif",
+    "idf.currentSetup": "C:/Users/PC/Desktop/esp-idf/"
 }
