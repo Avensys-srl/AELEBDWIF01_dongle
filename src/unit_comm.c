@@ -89,10 +89,11 @@ static void Unit_event_task(void *pvParameters)
 
         switch ( (uint8_t)WBM_Com_State )
 		{
-			case WBM_initialize:
-                //gpio_set_level( Wifi_Ready, 1);
-				vTaskDelay(2500);
-			    WBM_Com_State = WBM_Communicating ;
+				case WBM_initialize:
+	                ble_set_runtime_ready(false);
+	                //gpio_set_level( Wifi_Ready, 1);
+					vTaskDelay(2500);
+				    WBM_Com_State = WBM_Communicating ;
 			    currentState = CLKTSConnectState_Init;
                 gpio_set_level( Wifi_Ready, 1);
 				break;
@@ -348,9 +349,10 @@ static void Unit_event_task(void *pvParameters)
 				
 				break;
 			
-			case WBM_Error:
-                    gpio_set_level( Wifi_Ready, 0);
-				break;
+				case WBM_Error:
+	                    ble_set_runtime_ready(false);
+	                    gpio_set_level( Wifi_Ready, 0);
+					break;
 		}
         vTaskDelay(1);
     }
@@ -577,9 +579,10 @@ void Connect_To_Unit ( void )
 			gKTSGlobal.LastReceivedPollingBase_TimerMilliseconds	= Millis();
 			gKTSGlobal.PollingBase_TimerMilliseconds		= Millis();
 			gKTSGlobal.PollingDebugData_TimerMilliseconds	= gKTSGlobal.PollingBase_TimerMilliseconds;
-			WBM_Com_State = WBM_Connected ;
-			WBM_Polling_Base_Data_Parse ( buff_ser1 );
-            ESP_LOGI(TAG1, "WBM connected to Unit" );
+				WBM_Com_State = WBM_Connected ;
+				ble_set_runtime_ready(true);
+				WBM_Polling_Base_Data_Parse ( buff_ser1 );
+	            ESP_LOGI(TAG1, "WBM connected to Unit" );
 			esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_EEPROM_DATA], sizeof(gRDEeprom), (u_int8_t *)&gRDEeprom);
 
 			address = (const char *)&gRDEeprom.SerialString;

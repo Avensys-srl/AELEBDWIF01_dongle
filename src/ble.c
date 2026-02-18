@@ -1,5 +1,6 @@
 #include "ble.h"
 #include "main.h"
+#include "CL_WBM.h"
 #include "mqtt_app.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
@@ -18,6 +19,8 @@ static uint8_t adv_config_done = 0;
 
 extern uint16_t Read_Eeprom_Request_Index;
 extern S_EEPROM gRDEeprom;
+extern CLKTSData gKTSData;
+extern CLKTSDebugData gKTSDebugData;
 
 uint16_t ble_handle_table[HRS_IDX_NB];
 
@@ -46,6 +49,8 @@ typedef enum {
     PROV_STATE_APPLYING,
     PROV_STATE_DONE,
     PROV_STATE_ERROR,
+    PROV_STATE_BOOTING,
+    PROV_STATE_RUNTIME_READY,
 } prov_state_t;
 
 static prov_state_t s_prov_state = PROV_STATE_IDLE;
@@ -54,10 +59,12 @@ static bool s_prov_status_notify = false;
 static uint16_t s_conn_id = 0;
 static esp_gatt_if_t s_gatts_if = ESP_GATT_IF_NONE;
 static TimerHandle_t s_prov_timer = NULL;
+static bool s_runtime_ready = false;
 
 #define PROV_TIMEOUT_MS 90000
 
 static void ble_set_prov_status(uint8_t status);
+static void ble_init_runtime_placeholders(void);
 
 static bool ble_packet_append(ble_packet_t *packet, const uint8_t *data, size_t len, size_t max_len, const char *label) {
     if (packet->data == NULL) {
@@ -160,6 +167,29 @@ static void ble_set_prov_status(uint8_t status) {
     } else if (s_prov_timer != NULL) {
         xTimerStop(s_prov_timer, 0);
     }
+}
+
+void ble_set_runtime_ready(bool ready) {
+    s_runtime_ready = ready;
+    if (ready) {
+        ble_set_prov_status(PROV_STATE_RUNTIME_READY);
+    } else {
+        ble_set_prov_status(PROV_STATE_BOOTING);
+    }
+}
+
+bool ble_is_runtime_ready(void) {
+    return s_runtime_ready;
+}
+
+static void ble_init_runtime_placeholders(void) {
+    memset(&gRDEeprom, 0, sizeof(gRDEeprom));
+    memset(&gKTSData, 0, sizeof(gKTSData));
+    memset(&gKTSDebugData, 0, sizeof(gKTSDebugData));
+
+    esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_EEPROM_DATA], sizeof(gRDEeprom), (uint8_t *)&gRDEeprom);
+    esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_POLLIING], sizeof(gKTSData), (uint8_t *)&gKTSData);
+    esp_ble_gatts_set_attr_value(ble_handle_table[IDX_CHAR_VAL_DEBUG_DATA], sizeof(gKTSDebugData), (uint8_t *)&gKTSDebugData);
 }
 
 static uint8_t service_uuid[16] = {
@@ -655,7 +685,12 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
             }
         } break;
         case ESP_GATTS_READ_EVT:
-            // ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_READ_EVT");
+            if (!s_runtime_ready &&
+                (param->read.handle == ble_handle_table[IDX_CHAR_VAL_EEPROM_DATA] ||
+                 param->read.handle == ble_handle_table[IDX_CHAR_VAL_POLLIING] ||
+                 param->read.handle == ble_handle_table[IDX_CHAR_VAL_DEBUG_DATA])) {
+                ESP_LOGI(GATTS_TABLE_TAG, "Read while booting: handle=%d", param->read.handle);
+            }
             break;
 
         case ESP_GATTS_WRITE_EVT:
@@ -725,7 +760,8 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                 ESP_LOGI(GATTS_TABLE_TAG, "create attribute table successfully, the number handle = %d\n", param->add_attr_tab.num_handle);
                 memcpy(ble_handle_table, param->add_attr_tab.handles, sizeof(ble_handle_table));
                 esp_ble_gatts_start_service(ble_handle_table[IDX_SVC]);
-                ble_set_prov_status(PROV_STATE_WAIT_SSID);
+                ble_init_runtime_placeholders();
+                ble_set_runtime_ready(false);
             }
             break;
         }
