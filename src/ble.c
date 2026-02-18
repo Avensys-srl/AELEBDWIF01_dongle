@@ -1,5 +1,6 @@
 #include "ble.h"
 #include "main.h"
+#include "mqtt_app.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 
@@ -433,23 +434,6 @@ static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] = {
 };
 
 
-// Funzione per scrivere una stringa nella NVS
-static esp_err_t nvs_write_string(const char* key, const char* value) {
-    nvs_handle_t my_handle;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) return err;
-
-    err = nvs_set_str(my_handle, key, value);
-    if (err != ESP_OK) {
-        nvs_close(my_handle);
-        return err;
-    }
-
-    err = nvs_commit(my_handle);
-    nvs_close(my_handle);
-    return err;
-}
-
 static void ble_security_init(void) {
     esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_BOND;
     esp_ble_io_cap_t iocap = ESP_IO_CAP_NONE;
@@ -474,21 +458,12 @@ static void handle_write_event(esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t 
             return;
         }
 
-        wifi_is_ssid_send = true;
         ble_packet_copy_to_string(&ssid_packet, WIFI_SSID, sizeof(WIFI_SSID));
         if (password_packet.len > 0) {
-            connect_to_wifi = true;
             ble_set_prov_status(PROV_STATE_READY);
+            (void)mqtt_enqueue_wifi_credentials(WIFI_SSID, WIFI_PASSWORD, true, "ble-auto");
         } else {
             ble_set_prov_status(PROV_STATE_WAIT_PASSWORD);
-        }
-
-        esp_err_t err = nvs_write_string("wifi_ssid", WIFI_SSID);
-        if (err != ESP_OK) {
-            ESP_LOGE(GATTS_TABLE_TAG, "Error (%s) writing SSID to NVS!", esp_err_to_name(err));
-            ble_set_prov_status(PROV_STATE_ERROR);
-        } else {
-            ESP_LOGI(GATTS_TABLE_TAG, "SSID written to NVS successfully");
         }
     } else if (param->write.handle == ble_handle_table[IDX_CHAR_VAL_WIFI_PASSWORD]) {
         ESP_LOGI(GATTS_TABLE_TAG, "WIFI Password");
@@ -498,23 +473,12 @@ static void handle_write_event(esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t 
             return;
         }
 
-        wifi_is_pass_send = true;
-        if (ssid_packet.len > 0) {
-            connect_to_wifi = true;
-        }
         ble_packet_copy_to_string(&password_packet, WIFI_PASSWORD, sizeof(WIFI_PASSWORD));
         if (ssid_packet.len == 0) {
             ble_set_prov_status(PROV_STATE_WAIT_SSID);
         } else {
             ble_set_prov_status(PROV_STATE_READY);
-        }
-
-        esp_err_t err = nvs_write_string("wifi_pass", WIFI_PASSWORD);
-        if (err != ESP_OK) {
-            ESP_LOGE(GATTS_TABLE_TAG, "Error (%s) writing password to NVS!", esp_err_to_name(err));
-            ble_set_prov_status(PROV_STATE_ERROR);
-        } else {
-            ESP_LOGI(GATTS_TABLE_TAG, "Password written to NVS successfully");
+            (void)mqtt_enqueue_wifi_credentials(WIFI_SSID, WIFI_PASSWORD, true, "ble-auto");
         }
     } else if (param->write.handle == ble_handle_table[IDX_CHAR_VAL_CONNECT_TO_CLOUD]) {
         if (ssid_packet.len == 0 || password_packet.len == 0) {
@@ -522,10 +486,14 @@ static void handle_write_event(esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t 
             ble_set_prov_status(PROV_STATE_ERROR);
         } else {
             ble_set_prov_status(PROV_STATE_APPLYING);
-            connect_to_wifi = true;
-            ble_set_prov_status(PROV_STATE_DONE);
-            ble_packet_reset(&ssid_packet);
-            ble_packet_reset(&password_packet);
+            bool queued = mqtt_enqueue_wifi_credentials(WIFI_SSID, WIFI_PASSWORD, true, "ble");
+            if (queued) {
+                ble_set_prov_status(PROV_STATE_DONE);
+                ble_packet_reset(&ssid_packet);
+                ble_packet_reset(&password_packet);
+            } else {
+                ble_set_prov_status(PROV_STATE_ERROR);
+            }
         }
     }
 

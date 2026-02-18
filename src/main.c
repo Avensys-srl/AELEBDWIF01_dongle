@@ -39,10 +39,6 @@ static int total_len = 0;
 
 bool send_eeprom_read_request = false;
 
-bool connect_to_wifi   = false;
-bool wifi_is_ssid_send = false;
-bool wifi_is_pass_send = false;
-
 // Variables
 TimerHandle_t xTimer_Led = NULL;
 uint16_t Counter_Led = 0;
@@ -109,6 +105,22 @@ esp_err_t nvs_read_string(const char* key, char* value, size_t max_len) {
     if (err == ESP_OK && required_size <= max_len) {
         err = nvs_get_str(my_handle, key, value, &required_size);
     }
+    nvs_close(my_handle);
+    return err;
+}
+
+esp_err_t nvs_write_string(const char* key, const char* value) {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = nvs_set_str(my_handle, key, value);
+    if (err == ESP_OK) {
+        err = nvs_commit(my_handle);
+    }
+
     nvs_close(my_handle);
     return err;
 }
@@ -389,6 +401,29 @@ void check_update_task(void *pvParameter) {
     vTaskDelete(NULL);
 }
 
+static void ota_boot_task(void *pvParameter) {
+    const TickType_t wait_step = pdMS_TO_TICKS(250);
+    const TickType_t wait_timeout = pdMS_TO_TICKS(90000);
+    TickType_t start = xTaskGetTickCount();
+
+    while (!Wifi_Connected_Flag && (xTaskGetTickCount() - start) < wait_timeout) {
+        vTaskDelay(wait_step);
+    }
+
+    if (!Wifi_Connected_Flag) {
+        ESP_LOGW(TAG_OTA, "Skipping OTA check at boot: Wi-Fi not connected within timeout");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG_OTA, "Boot Wi-Fi connected, starting one-shot OTA check");
+    if (xTaskCreate(check_update_task, "check_update_task", 8192, NULL, 5, NULL) != pdPASS) {
+        ESP_LOGE(TAG_OTA, "Unable to create check_update_task");
+    }
+
+    vTaskDelete(NULL);
+}
+
 void Unit_Update_task (void *pvParameters)
 {
 
@@ -658,9 +693,10 @@ void app_main(void) {
 
    vTaskDelay(100 );
 
-   xTaskCreate(mqtt_task, "mqtt_task", MQTT_TASK_STACK_SIZE, NULL, 10, &Mqtt_Task_xHandle);
+	   xTaskCreate(mqtt_task, "mqtt_task", MQTT_TASK_STACK_SIZE, NULL, 10, &Mqtt_Task_xHandle);
+       xTaskCreate(ota_boot_task, "ota_boot_task", 4096, NULL, 5, NULL);
 
-   unit_comm_start();
+	   unit_comm_start();
 }
 
 uint32_t Millis ( void )

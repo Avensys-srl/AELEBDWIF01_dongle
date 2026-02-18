@@ -41,10 +41,6 @@
 extern char WIFI_SSID[MAX_SSID_LENGTH + 1];
 extern char WIFI_PASSWORD[MAX_PASSWORD_LENGTH + 1];
 
-extern bool connect_to_wifi;
-extern bool wifi_is_ssid_send;
-extern bool wifi_is_pass_send;
-
 extern bool                     read_eeprom_data;
 extern bool                     send_eeprom_read_request;
 
@@ -65,4 +61,5 @@ typedef struct {
 
 void check_update_task(void *pvParameter);
 esp_err_t nvs_read_string(const char* key, char* value, size_t max_len);
+esp_err_t nvs_write_string(const char* key, const char* value);
 #endif

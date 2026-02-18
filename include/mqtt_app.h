@@ -18,6 +18,7 @@ void mqtt_publish_with_suffix(const char *address, const char *suffix, const uin
 void mqtt_publish_eeprom(const char *address, const uint8_t *data, size_t data_len);
 void mqtt_publish_polling(const char *address, const uint8_t *data, size_t data_len);
 void mqtt_publish_debug(const char *address, const uint8_t *data, size_t data_len);
+bool mqtt_enqueue_wifi_credentials(const char *ssid, const char *password, bool persist_to_nvs, const char *source_tag);
 
 extern esp_mqtt_client_handle_t client;
 extern bool is_mqtt_ready;

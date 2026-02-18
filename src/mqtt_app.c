@@ -5,11 +5,37 @@
 #include "main.h"
 
 static const char *BROKER_URL = "mqtts://a3qi68kx39kjfk-ats.iot.eu-central-1.amazonaws.com:8883";
+static const char *TAG_WIFI_MANAGER = "wifi_manager";
+
+#define WIFI_REQ_QUEUE_LEN 8
+#define WIFI_MAX_RETRY 3
+#define WIFI_RETRY_BASE_MS 500
+#define WIFI_APPLY_COOLDOWN_MS 800
+
+typedef enum {
+    WIFI_MANAGER_IDLE = 0,
+    WIFI_MANAGER_APPLYING,
+    WIFI_MANAGER_CONNECTED,
+    WIFI_MANAGER_FAILED,
+} wifi_manager_state_t;
+
+typedef struct {
+    char ssid[MAX_SSID_LENGTH + 1];
+    char password[MAX_PASSWORD_LENGTH + 1];
+    bool persist_to_nvs;
+    uint32_t request_id;
+    TickType_t enqueue_tick;
+    char source[16];
+} wifi_request_t;
 
 esp_mqtt_client_handle_t client;
 bool is_mqtt_ready = false;
 
 static uint8_t s_subscribe_counter = 0;
+static QueueHandle_t s_wifi_req_queue = NULL;
+static wifi_manager_state_t s_wifi_manager_state = WIFI_MANAGER_IDLE;
+static uint32_t s_wifi_request_counter = 0;
+static TickType_t s_last_apply_tick = 0;
 
 extern S_EEPROM gRDEeprom;
 extern uint16_t Read_Eeprom_Request_Index;
@@ -28,6 +54,44 @@ static void log_error_if_nonzero(const char *message, int error_code) {
     if (error_code != 0) {
         ESP_LOGE(GATTS_TABLE_TAG, "Last error %s: 0x%x", message, error_code);
     }
+}
+
+bool mqtt_enqueue_wifi_credentials(const char *ssid, const char *password, bool persist_to_nvs, const char *source_tag) {
+    if (s_wifi_req_queue == NULL) {
+        s_wifi_req_queue = xQueueCreate(WIFI_REQ_QUEUE_LEN, sizeof(wifi_request_t));
+    }
+
+    if (s_wifi_req_queue == NULL || ssid == NULL || password == NULL) {
+        return false;
+    }
+
+    if (ssid[0] == '\0') {
+        ESP_LOGW(TAG_WIFI_MANAGER, "Rejected Wi-Fi request: empty SSID");
+        return false;
+    }
+
+    wifi_request_t request;
+    memset(&request, 0, sizeof(request));
+    strlcpy(request.ssid, ssid, sizeof(request.ssid));
+    strlcpy(request.password, password, sizeof(request.password));
+    request.persist_to_nvs = persist_to_nvs;
+    request.enqueue_tick = xTaskGetTickCount();
+    request.request_id = ++s_wifi_request_counter;
+    strlcpy(request.source, source_tag ? source_tag : "unknown", sizeof(request.source));
+
+    if (xQueueSend(s_wifi_req_queue, &request, 0) != pdTRUE) {
+        // Queue full: drop oldest and keep the latest request.
+        wifi_request_t discarded;
+        (void)xQueueReceive(s_wifi_req_queue, &discarded, 0);
+        if (xQueueSend(s_wifi_req_queue, &request, 0) != pdTRUE) {
+            ESP_LOGW(TAG_WIFI_MANAGER, "Unable to enqueue Wi-Fi request id=%lu from %s", (unsigned long)request.request_id, request.source);
+            return false;
+        }
+    }
+
+    ESP_LOGI(TAG_WIFI_MANAGER, "Queued Wi-Fi request id=%lu source=%s ssidLen=%u passLen=%u",
+             (unsigned long)request.request_id, request.source, (unsigned)strlen(request.ssid), (unsigned)strlen(request.password));
+    return true;
 }
 
 static void mqtt_build_topic(char *buffer, size_t buffer_size, const char *address, const char *suffix) {
@@ -195,28 +259,100 @@ static void mqtt_app_start(void) {
     esp_mqtt_client_start(client);
 }
 
-void mqtt_task(void *arg) {
-    vTaskDelay(1000);
+static esp_err_t apply_wifi_request(const wifi_request_t *request) {
+    esp_err_t err;
+    int retry = 0;
+    TickType_t now = xTaskGetTickCount();
 
-    if (!Wifi_Connected_Flag) {
-        ESP_ERROR_CHECK(wifi_connect(WIFI_SSID, WIFI_PASSWORD));
+    if (Wifi_Connected_Flag &&
+        strcmp(WIFI_SSID, request->ssid) == 0 &&
+        strcmp(WIFI_PASSWORD, request->password) == 0) {
+        s_wifi_manager_state = WIFI_MANAGER_CONNECTED;
+        ESP_LOGI(TAG_WIFI_MANAGER, "Skip Wi-Fi request id=%lu: credentials unchanged", (unsigned long)request->request_id);
+        return ESP_OK;
     }
 
-    mqtt_app_start();
+    if ((now - s_last_apply_tick) < pdMS_TO_TICKS(WIFI_APPLY_COOLDOWN_MS)) {
+        TickType_t wait_ticks = pdMS_TO_TICKS(WIFI_APPLY_COOLDOWN_MS) - (now - s_last_apply_tick);
+        vTaskDelay(wait_ticks);
+    }
 
-    while (1) {
-        if (wifi_is_ssid_send == true && wifi_is_pass_send == true && connect_to_wifi == true) {
-            ESP_LOGI(GATTS_TABLE_TAG, "WIFI_SSID: %s", WIFI_SSID);
-            ESP_LOGI(GATTS_TABLE_TAG, "WIFI_PASSWORD: %s", WIFI_PASSWORD);
+    if (request->persist_to_nvs) {
+        err = nvs_write_string("wifi_ssid", request->ssid);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_WIFI_MANAGER, "NVS write SSID failed id=%lu err=%s", (unsigned long)request->request_id, esp_err_to_name(err));
+            return err;
+        }
+        err = nvs_write_string("wifi_pass", request->password);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_WIFI_MANAGER, "NVS write PASSWORD failed id=%lu err=%s", (unsigned long)request->request_id, esp_err_to_name(err));
+            return err;
+        }
+    }
 
-            wifi_disconnect();
-            ESP_ERROR_CHECK(wifi_connect(WIFI_SSID, WIFI_PASSWORD));
+    strlcpy(WIFI_SSID, request->ssid, sizeof(WIFI_SSID));
+    strlcpy(WIFI_PASSWORD, request->password, sizeof(WIFI_PASSWORD));
 
-            wifi_is_ssid_send = false;
-            wifi_is_pass_send = false;
-            connect_to_wifi   = false;
+    s_wifi_manager_state = WIFI_MANAGER_APPLYING;
+    (void)wifi_disconnect();
+
+    while (retry < WIFI_MAX_RETRY) {
+        TickType_t attempt_start = xTaskGetTickCount();
+        err = wifi_connect(WIFI_SSID, WIFI_PASSWORD);
+        TickType_t elapsed_ms = (xTaskGetTickCount() - attempt_start) * portTICK_PERIOD_MS;
+
+        if (err == ESP_OK) {
+            s_wifi_manager_state = WIFI_MANAGER_CONNECTED;
+            s_last_apply_tick = xTaskGetTickCount();
+            ESP_LOGI(TAG_WIFI_MANAGER, "Wi-Fi request id=%lu applied in %lu ms (retry=%d)",
+                     (unsigned long)request->request_id, (unsigned long)elapsed_ms, retry);
+            return ESP_OK;
         }
 
-        vTaskDelay(1);
+        retry++;
+        s_wifi_manager_state = WIFI_MANAGER_FAILED;
+        ESP_LOGW(TAG_WIFI_MANAGER, "Wi-Fi request id=%lu failed retry=%d err=%s elapsed=%lu ms",
+                 (unsigned long)request->request_id, retry, esp_err_to_name(err), (unsigned long)elapsed_ms);
+
+        if (retry < WIFI_MAX_RETRY) {
+            vTaskDelay(pdMS_TO_TICKS(WIFI_RETRY_BASE_MS * retry));
+        }
+    }
+
+    return err;
+}
+
+void mqtt_task(void *arg) {
+    wifi_request_t request;
+    wifi_request_t latest;
+
+    if (s_wifi_req_queue == NULL) {
+        s_wifi_req_queue = xQueueCreate(WIFI_REQ_QUEUE_LEN, sizeof(wifi_request_t));
+    }
+    if (s_wifi_req_queue == NULL) {
+        ESP_LOGE(TAG_WIFI_MANAGER, "Failed to create Wi-Fi request queue");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    (void)mqtt_enqueue_wifi_credentials(WIFI_SSID, WIFI_PASSWORD, false, "boot");
+
+    while (1) {
+        if (xQueueReceive(s_wifi_req_queue, &request, pdMS_TO_TICKS(200)) == pdTRUE) {
+            latest = request;
+            while (xQueueReceive(s_wifi_req_queue, &request, 0) == pdTRUE) {
+                latest = request;
+            }
+
+            TickType_t queue_delay_ms = (xTaskGetTickCount() - latest.enqueue_tick) * portTICK_PERIOD_MS;
+            ESP_LOGI(TAG_WIFI_MANAGER, "Applying Wi-Fi request id=%lu source=%s queueDelay=%lu ms",
+                     (unsigned long)latest.request_id, latest.source, (unsigned long)queue_delay_ms);
+
+            if (apply_wifi_request(&latest) == ESP_OK && !is_mqtt_ready) {
+                mqtt_app_start();
+            }
+        }
     }
 }
